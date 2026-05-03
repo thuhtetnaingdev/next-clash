@@ -10,7 +10,7 @@ export async function GET(
   try {
     const { token } = await params;
 
-    if (token !== process.env.SUBSCRIPTION_TOKEN) {
+    if (token !== process.env.NEXT_PUBLIC_SUBSCRIPTION_TOKEN) {
       return new NextResponse('Not Found', { status: 404 });
     }
 

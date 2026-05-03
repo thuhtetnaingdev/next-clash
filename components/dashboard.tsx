@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { YAMLEditor } from './yaml-editor';
 import { LogOut, Copy, Check } from 'lucide-react';
 
@@ -14,7 +13,7 @@ export function Dashboard() {
   const router = useRouter();
 
   const subscriptionUrl = typeof window !== 'undefined' 
-    ? `${window.location.origin}/api/subscription/yaml` 
+    ? `${window.location.origin}/api/subscription/${process.env.NEXT_PUBLIC_SUBSCRIPTION_TOKEN}/yaml` 
     : '';
 
   useEffect(() => {

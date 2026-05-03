@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { YAMLEditor } from './yaml-editor';
+import { VersionManager } from './version-manager';
 import { LogOut, Copy, Check } from 'lucide-react';
 
 export function Dashboard() {
@@ -95,10 +96,17 @@ export function Dashboard() {
             </Button>
           </div>
         </div>
-        <Button onClick={handleLogout} variant="outline" className="gap-2 shrink-0">
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Logout</span>
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <VersionManager
+            currentContent={configContent}
+            onRestore={(content) => setConfigContent(content)}
+            onSave={handleSaveConfig}
+          />
+          <Button onClick={handleLogout} variant="outline" className="gap-2">
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Logout</span>
+          </Button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-hidden">

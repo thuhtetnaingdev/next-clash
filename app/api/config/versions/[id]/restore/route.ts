@@ -4,7 +4,10 @@ import { db } from '@/lib/db/client';
 import { configs, configVersions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-export async function GET(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const token = request.cookies.get('auth_token')?.value;
 
@@ -24,80 +27,51 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const config = await db
+    const { id } = await params;
+    const versionId = parseInt(id);
+
+    // Get the version to restore
+    const version = await db
       .select()
-      .from(configs)
-      .where(eq(configs.userId, payload.userId))
+      .from(configVersions)
+      .where(eq(configVersions.id, versionId))
       .limit(1);
 
-    return NextResponse.json({ content: config.length ? config[0].content : '' });
-  } catch (error) {
-    console.error('GET config error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const token = request.cookies.get('auth_token')?.value;
-
-    if (!token) {
+    if (!version.length) {
       return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
+        { error: 'Version not found' },
+        { status: 404 }
       );
     }
 
-    const payload = await verifyToken(token);
-
-    if (!payload) {
-      return NextResponse.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
-
-    const { content } = await request.json();
-
-    if (!content) {
-      return NextResponse.json(
-        { error: 'Content is required' },
-        { status: 400 }
-      );
-    }
-
-    // Get current config to save as version before updating
+    // Save current config as a version before restoring
     const currentConfig = await db
       .select()
       .from(configs)
       .where(eq(configs.userId, payload.userId))
       .limit(1);
 
-    // Save current content as version before updating
     if (currentConfig.length && currentConfig[0].content) {
       await db
         .insert(configVersions)
         .values({ userId: payload.userId, content: currentConfig[0].content });
     }
 
-    // Update or create config
+    // Restore the version
     if (currentConfig.length > 0) {
       await db
         .update(configs)
-        .set({ content, updatedAt: new Date() })
+        .set({ content: version[0].content, updatedAt: new Date() })
         .where(eq(configs.userId, payload.userId));
     } else {
       await db
         .insert(configs)
-        .values({ userId: payload.userId, content });
+        .values({ userId: payload.userId, content: version[0].content });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('POST config error:', error);
+    console.error('POST restore error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

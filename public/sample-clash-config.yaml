@@ -1,0 +1,73 @@
+# Sample Clash Configuration
+# This is a basic example. Customize according to your needs.
+
+# Port configuration
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+
+# Proxies
+proxies:
+  - name: "Proxy-1"
+    type: vmess
+    server: 1.2.3.4
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    alterId: 0
+    cipher: auto
+    tls: true
+    skip-cert-verify: false
+
+  - name: "Proxy-2"
+    type: ss
+    server: 5.6.7.8
+    port: 8388
+    cipher: aes-256-gcm
+    password: password123
+
+# Proxy Groups
+proxy-groups:
+  - name: "Proxy"
+    type: select
+    proxies:
+      - "Proxy-1"
+      - "Proxy-2"
+
+  - name: "Auto"
+    type: url-test
+    proxies:
+      - "Proxy-1"
+      - "Proxy-2"
+    url: "http://www.gstatic.com/generate_204"
+    interval: 300
+
+  - name: "DIRECT"
+    type: select
+    proxies:
+      - DIRECT
+
+# Rules
+rules:
+  - DOMAIN-SUFFIX,google.com,Proxy
+  - DOMAIN-SUFFIX,github.com,Proxy
+  - GEOIP,CN,DIRECT
+  - MATCH,Proxy
+
+# DNS Configuration (optional)
+dns:
+  enable: false
+  listen: 0.0.0.0:53
+  default-nameserver:
+    - 8.8.8.8
+    - 8.8.4.4
+  nameserver:
+    - 8.8.8.8
+
+# TUN Configuration (optional)
+# tun:
+#   enable: false
+#   stack: system
+#   dns-hijack:
+#     - 0.0.0.0:53

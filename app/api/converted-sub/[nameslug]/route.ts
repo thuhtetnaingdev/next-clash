@@ -99,7 +99,7 @@ export async function GET(
 
     // Replace placeholders
     template = template.replace('{{PROXIES}}', proxyEntries);
-    template = template.replace('{{PROXY_NAMES}}', proxyNames);
+    template = template.replaceAll('{{PROXY_NAMES}}', proxyNames);
 
     return new NextResponse(template, {
       headers: {

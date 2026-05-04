@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { YAMLEditor } from './yaml-editor';
 import { VersionManager } from './version-manager';
-import { LogOut, Copy, Check } from 'lucide-react';
+import { LogOut, Copy, Check, Menu, X } from 'lucide-react';
+import { SideMenu } from './side-menu';
 
 export function Dashboard() {
   const [configContent, setConfigContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
 
   const subscriptionUrl = typeof window !== 'undefined' 
@@ -87,8 +89,11 @@ export function Dashboard() {
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div className="flex items-center gap-2 w-full overflow-hidden">
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <Button onClick={() => setSidebarOpen(!sidebarOpen)} variant="ghost" size="sm" className="shrink-0 lg:hidden">
+          {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </Button>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-md min-w-0 flex-1">
             <code className="text-sm text-gray-700 truncate">{subscriptionUrl}</code>
             <Button onClick={handleCopyUrl} variant="ghost" size="sm" className="shrink-0">
@@ -109,11 +114,12 @@ export function Dashboard() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
-        <div className="h-full p-6">
+      <div className="flex-1 flex overflow-hidden">
+        <SideMenu open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <main className="flex-1 overflow-auto p-6">
           <YAMLEditor content={configContent} onSave={handleSaveConfig} />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

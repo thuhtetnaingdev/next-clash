@@ -1,0 +1,23 @@
+allow-lan: false
+ipv6: true
+log-level: info
+mixed-port: 7890
+mode: rule
+proxies:
+{{PROXIES}}
+proxy-groups:
+    - interval: 600
+      name: AUTO
+      proxies:
+        {{PROXY_NAMES}}
+      tolerance: 50
+      type: url-test
+      url: http://www.gstatic.com/generate_204
+    - name: Proxy
+      proxies:
+        - AUTO
+        - DIRECT
+        {{PROXY_NAMES}}
+      type: select
+rules:
+    - MATCH,Proxy, proxies are placeholder.

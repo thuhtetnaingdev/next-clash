@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, serial } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, serial, integer } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -28,3 +28,17 @@ export const configVersions = pgTable('config_versions', {
   content: text('content').notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+export const converters = pgTable('converters', {
+  id: serial('id').primaryKey(),
+  userId: serial('user_id').references(() => users.id).notNull(),
+  name: text('name').notNull(),
+  subscriptionUrl: text('subscription_url').notNull(),
+  convertedProxies: text('converted_proxies'),
+  interval: integer('interval').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  userNameUnique: { columns: [table.userId, table.name] },
+  userSubUrlUnique: { columns: [table.userId, table.subscriptionUrl] },
+}));

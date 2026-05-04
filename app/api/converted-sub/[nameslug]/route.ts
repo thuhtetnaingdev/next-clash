@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/session';
 import { db } from '@/lib/db/client';
-import { converters } from '@/lib/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { converters, users } from '@/lib/db/schema';
+import { eq, sql, and } from 'drizzle-orm';
 import yaml from 'js-yaml';
 import fs from 'fs';
 import path from 'path';
@@ -13,21 +13,13 @@ export async function GET(
 ) {
   try {
     const token = request.cookies.get('auth_token')?.value;
+    let userId: number | null = null;
 
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      );
-    }
-
-    const payload = await verifyToken(token);
-
-    if (!payload) {
-      return NextResponse.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
+    if (token) {
+      const payload = await verifyToken(token);
+      if (payload) {
+        userId = payload.userId;
+      }
     }
 
     const { nameslug } = await params;
@@ -35,12 +27,29 @@ export async function GET(
     // Decode and lowercase the nameslug for case-insensitive matching
     const slug = decodeURIComponent(nameslug).toLowerCase();
 
-    const converter = await db
-      .select()
-      .from(converters)
-      .where(sql`LOWER(${converters.name}) = ${slug}`)
-      .where(eq(converters.userId, payload.userId))
-      .limit(1);
+    // Build query - if authenticated, filter by userId; otherwise use first user
+    let converter;
+    if (userId) {
+      converter = await db
+        .select()
+        .from(converters)
+        .where(and(sql`LOWER(${converters.name}) = ${slug}`, eq(converters.userId, userId)))
+        .limit(1);
+    } else {
+      // Public access - use first user
+      const userList = await db.select().from(users).limit(1);
+      if (userList.length === 0) {
+        return NextResponse.json(
+          { error: 'No users found' },
+          { status: 404 }
+        );
+      }
+      converter = await db
+        .select()
+        .from(converters)
+        .where(and(sql`LOWER(${converters.name}) = ${slug}`, eq(converters.userId, userList[0].id)))
+        .limit(1);
+    }
 
     if (!converter.length) {
       return NextResponse.json(

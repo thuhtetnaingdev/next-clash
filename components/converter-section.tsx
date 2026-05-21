@@ -48,17 +48,18 @@ export default function ConverterSection({
 
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error || 'Tcping failed');
+        throw new Error(error.error || 'URL test failed');
       }
 
-      const { uris } = await res.json();
+      const data = await res.json();
 
-      if (uris.length === 0) {
+      if (!data.results || data.results.length === 0) {
         setYamlContent('# No working servers found');
         return;
       }
 
-      const yamlResult = await parseClashContent(uris.join('\n'));
+      const workingUris = data.results.map((r: { uri: string }) => r.uri);
+      const yamlResult = await parseClashContent(workingUris.join('\n'));
       setYamlContent(yamlResult);
     } catch (error) {
       console.error('Convert error:', error);

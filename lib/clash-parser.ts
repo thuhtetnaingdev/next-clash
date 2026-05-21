@@ -8,8 +8,18 @@ function decode(value: string): string {
   }
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function parseProxyLink(link: string): any | null {
   try {
+    link = decodeHtmlEntities(link);
     const protocol = link.split('://')[0].toLowerCase();
     // Build a standard URL for parsing
     const urlStr = link.replace(/^[a-z]+:\/\//i, 'https://');
@@ -62,6 +72,9 @@ function parseProxyLink(link: string): any | null {
         const fp = params.get('fp') || '';
         const pbk = (params.get('pbk') || '').trim();
         const sid = (params.get('sid') || '').trim();
+        if (sid && !isValidShortId(sid)) {
+          return null;
+        }
         const network = (params.get('type') || 'tcp').trim();
         let net = network;
         if (net === 'httpupgrade') {
@@ -69,7 +82,11 @@ function parseProxyLink(link: string): any | null {
         }
         const path = (params.get('path') || params.get('serviceName') || '').trim();
         const hostHeader = params.get('host') || '';
-        const flow = params.get('flow') || '';
+        let flow = params.get('flow') || '';
+        const allowedFlows = ['xtls-rprx-vision', 'xtls-rprx-vision-udp443'];
+        if (flow && !allowedFlows.includes(flow)) {
+          flow = '';
+        }
 
         // Detect headerType=http conversion (type=tcp + headerType=http => http transport)
         const headerType = (params.get('headerType') || '').trim();
@@ -82,10 +99,31 @@ function parseProxyLink(link: string): any | null {
         // No cipher field for vless/vmess/trojan per Clash Meta spec
         proxy.tls = security !== 'none';
         if (sni) proxy.servername = sni;
-        if (fp) proxy['client-fingerprint'] = fp;
+
+        const packetEncoding = params.get('packetEncoding') || '';
+        if (packetEncoding) {
+          proxy['packet-encoding'] = packetEncoding;
+        }
+
+        const fpVal = params.get('fp') || '';
+        if (fpVal) {
+          proxy['client-fingerprint'] = fpVal;
+        }
+
         if (flow) proxy.flow = flow;
 
+        let validPublicKey = false;
         if (pbk) {
+          try {
+            const decoded = atob(pbk);
+            if (decoded.length === 32) {
+              validPublicKey = true;
+            }
+          } catch {
+            // invalid base64
+          }
+        }
+        if (pbk && validPublicKey) {
           proxy['reality-opts'] = {
             'public-key': pbk,
             'short-id': sid,
@@ -96,8 +134,14 @@ function parseProxyLink(link: string): any | null {
         if (net !== 'tcp') {
           if (net === 'ws') {
             proxy.network = net;
-            const wsOpts: any = { path };
-            if (hostHeader) wsOpts.headers = { Host: hostHeader };
+            let wsPath = path || '/';
+            if (!wsPath.startsWith('/')) wsPath = '/' + wsPath;
+            const wsOpts: any = { path: wsPath };
+            // Fallback: use sni, then server, then hostHeader
+            let finalHost = hostHeader;
+            if (!finalHost) finalHost = sni;
+            if (!finalHost) finalHost = proxy.server;
+            if (finalHost) wsOpts.headers = { Host: finalHost };
             proxy['ws-opts'] = wsOpts;
           } else if (net === 'grpc') {
             proxy.network = net;
@@ -108,7 +152,8 @@ function parseProxyLink(link: string): any | null {
             proxy.tls = false;
             const httpOpts: any = {};
             httpOpts.method = params.get('method') || 'GET';
-            const httpPath = params.get('path') || proxy.name;
+            let httpPath = params.get('path') || '/';
+            if (httpPath && !httpPath.startsWith('/')) httpPath = '/' + httpPath;
             httpOpts.path = [httpPath];
             const httpHost = params.get('host') || '';
             if (httpHost) {
@@ -121,18 +166,63 @@ function parseProxyLink(link: string): any | null {
         break;
       }
       case 'ss': {
+        // --- Extract method & password ---
         if (url.password) {
           proxy.method = decode(url.username);
           proxy.password = decode(url.password);
         } else {
-          const creds = atob(decode(url.username));
-          const [method, password] = creds.split(':');
-          proxy.method = method;
-          proxy.password = password;
+          // Try base64-encoded credentials
+          try {
+            const creds = atob(decode(url.username));
+            const [method, password] = creds.split(':');
+            proxy.method = method;
+            proxy.password = password;
+          } catch {
+            // Not base64 – treat as plaintext or UUID
+            const rawUser = decode(url.username);
+            // If it contains a colon, it's method:password in plaintext
+            if (rawUser.includes(':')) {
+              const [method, password] = rawUser.split(':');
+              proxy.method = method;
+              proxy.password = password;
+            } else {
+              // UUID as password, unknown method – skip
+              return null;
+            }
+          }
         }
-        const plugin = params.get('plugin') || '';
-        if (plugin) {
-          proxy.plugin = plugin;
+
+        // If no valid credentials, skip this proxy
+        if (!proxy.method || !proxy.password) return null;
+
+        // --- Handle transport (ws / grpc) ---
+        const transport = params.get('type') || '';
+        const host = params.get('host') || '';
+        const path = params.get('path') || '';
+        const security = params.get('security') || '';
+
+        if (transport === 'ws') {
+          proxy.plugin = 'v2ray-plugin';
+          proxy['plugin-opts'] = {
+            mode: 'websocket',
+            host: host || undefined,
+            path: path ? decode(path) : '/',
+            tls: security === 'tls',
+          };
+          // Some subscriptions use 'sni' for TLS SNI
+          if (security === 'tls') {
+            const sni = params.get('sni') || '';
+            if (sni) proxy['plugin-opts'].host = sni;
+          }
+          // Shadowsocks over ws does not use the bare 'plugin' param from query
+          delete proxy.plugin;
+        } else if (transport === 'grpc') {
+          // Clash Meta doesn't support ss + gRPC natively → skip
+          return null;
+        } else {
+          // Plain ss, keep the 'plugin' from the original query if any
+          const plugin = params.get('plugin') || '';
+          if (plugin) proxy.plugin = plugin;
         }
         break;
       }
@@ -207,6 +297,34 @@ function parseProxyLink(link: string): any | null {
   }
 }
 
+function deduplicateProxies(proxies: any[]): any[] {
+  const nameCount = new Map<string, number>();
+  for (const p of proxies) {
+    const name = p.name?.replace(/`+$/, '').trim() || '';
+    nameCount.set(name, (nameCount.get(name) || 0) + 1);
+  }
+  const nameSeen = new Map<string, number>();
+  return proxies.map(p => {
+    const orig = p.name?.replace(/`+$/, '').trim() || '';
+    const total = nameCount.get(orig) ?? 1;
+    if (total === 1) return p;
+    const seen = (nameSeen.get(orig) || 0) + 1;
+    nameSeen.set(orig, seen);
+    if (seen === 1) return p;
+    return { ...p, name: `${orig} ${seen}` };
+  });
+}
+
+function isValidShortId(id: string): boolean {
+  // Must be a string, even length, max 16 chars, only hex
+  return (
+    typeof id === 'string' &&
+    id.length % 2 === 0 &&
+    id.length <= 16 &&
+    /^[0-9a-fA-F]*$/.test(id)
+  );
+}
+
 export async function parseClashContent(content: string): Promise<string> {
   let data = content;
   // Try base64 decode
@@ -220,11 +338,47 @@ export async function parseClashContent(content: string): Promise<string> {
   try {
     const doc = yaml.load(data) as any;
     if (doc && Array.isArray(doc.proxies)) {
-      const trimmedProxies = doc.proxies.map((p: any) => ({
-        ...p,
-        name: p.name?.trim(),
-      }));
-      return yaml.dump({ proxies: trimmedProxies }, { forceQuotes: true });
+      const needsQuoting = (name: string) =>
+        name.length > 0 &&
+        (/^[@!&*[\-:?>|#%`~\[}]/.test(name[0]) || /[:\s]+$/.test(name));
+
+      const cleanName = (name: string) => name.replace(/^'+|'+$/g, '').replace(/`+$/, '').trim();
+
+      const uniqueProxies = doc.proxies.map((p: any, idx: number) => {
+        const { _originalLink, ...clean } = p;
+        return { ...clean, name: `free ${idx + 1}` };
+      });
+
+      const result: any = { proxies: uniqueProxies };
+
+      if (doc['allow-lan'] !== undefined) result['allow-lan'] = doc['allow-lan'];
+      if (doc['ipv6'] !== undefined) result.ipv6 = doc.ipv6;
+      if (doc['log-level']) result['log-level'] = doc['log-level'];
+      if (doc['mixed-port'] !== undefined) result['mixed-port'] = doc['mixed-port'];
+      if (doc.mode) result.mode = doc.mode;
+
+      if (doc['proxy-groups'] && Array.isArray(doc['proxy-groups'])) {
+        result['proxy-groups'] = doc['proxy-groups'].map((group: any) => {
+          const cleanGroup: any = {};
+          if (group.name) cleanGroup.name = group.name;
+          if (group.type) cleanGroup.type = group.type;
+          if (group.proxies) {
+            cleanGroup.proxies = (Array.isArray(group.proxies) ? group.proxies : []).map((p: string) => cleanName(p));
+          }
+          if (group.interval !== undefined) cleanGroup.interval = group.interval;
+          if (group.tolerance !== undefined) cleanGroup.tolerance = group.tolerance;
+          if (group.url) cleanGroup.url = group.url;
+          if (group.lazy !== undefined) cleanGroup.lazy = group.lazy;
+          // discard any unexpected fields like “-interval”
+          return cleanGroup;
+        });
+      }
+
+      if (doc.rules && Array.isArray(doc.rules)) {
+        result.rules = doc.rules;
+      }
+
+      return yaml.dump(result, { forceQuotes: true });
     }
   } catch {
     // not YAML, continue
@@ -243,6 +397,7 @@ export async function parseClashContent(content: string): Promise<string> {
   for (const line of lines) {
     const proxy = parseProxyLink(line);
     if (proxy) {
+      proxy._originalLink = line;
       proxies.push(proxy);
     }
   }
@@ -251,5 +406,11 @@ export async function parseClashContent(content: string): Promise<string> {
     throw new Error('Unable to parse any proxy from the subscription data');
   }
 
-  return yaml.dump({ proxies }, { forceQuotes: true });
+  const uniqueProxies = proxies.map((p, idx) => {
+    const newName = `free ${idx + 1}`;
+    const { _originalLink, ...clean } = p;
+    return { ...clean, name: newName };
+  });
+
+  return yaml.dump({ proxies: uniqueProxies }, { forceQuotes: true });
 }

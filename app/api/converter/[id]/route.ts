@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/session';
 import { db } from '@/lib/db/client';
 import { converters } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 export async function GET(
   request: NextRequest,
@@ -31,8 +31,7 @@ export async function GET(
     const converter = await db
       .select()
       .from(converters)
-      .where(eq(converters.id, parseInt(id, 10)))
-      .where(eq(converters.userId, payload.userId))
+      .where(and(eq(converters.id, parseInt(id, 10)), eq(converters.userId, payload.userId)))
       .limit(1);
 
     if (!converter.length) {

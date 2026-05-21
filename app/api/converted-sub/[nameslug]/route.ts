@@ -91,7 +91,18 @@ export async function GET(
     const proxyEntries = yaml.dump({ proxies }, { forceQuotes: true, indent: 2 })
       .replace(/^proxies:\n/, '');
 
-    const proxyNames = proxies.map((p) => p.name).join('\n        - ');
+    const proxyNames = proxies
+      .map((p: any) => {
+        const name = (p.name || '').replace(/^'+|'+$/g, '').trim();
+        if (
+          name.length > 0 &&
+          (/^[@!&*[\-:?>|#%`~\[}]/.test(name[0]) || /[:\s]+$/.test(name) || name.includes(':'))
+        ) {
+          return `'${name}'`;
+        }
+        return name;
+      })
+      .join('\n        - ');
 
     // Read template
     const templatePath = path.join(process.cwd(), 'template.yaml');

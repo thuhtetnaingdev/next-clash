@@ -20,4 +20,4 @@ proxy-groups:
         - {{PROXY_NAMES}}
       type: select
 rules:
-    - MATCH,Proxy, proxies are placeholder.
+    - MATCH,Proxy

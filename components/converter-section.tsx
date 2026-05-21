@@ -40,24 +40,29 @@ export default function ConverterSection({
     if (!subscriptionUrl) return;
     setLoading(true);
     try {
-      const response = await fetch(subscriptionUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
-      }
-      const text = await response.text();
+      const res = await fetch('/api/converter/tcping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptionUrl }),
+      });
 
-      let decoded: string;
-      try {
-        decoded = atob(text);
-      } catch {
-        decoded = text;
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Tcping failed');
       }
 
-      const yamlResult = await parseClashContent(decoded);
+      const { uris } = await res.json();
+
+      if (uris.length === 0) {
+        setYamlContent('# No working servers found');
+        return;
+      }
+
+      const yamlResult = await parseClashContent(uris.join('\n'));
       setYamlContent(yamlResult);
     } catch (error) {
-      console.error('Fetch error:', error);
-      setYamlContent(`# Fetch failed.\n# ${error}`);
+      console.error('Convert error:', error);
+      setYamlContent(`# Convert failed.\n# ${error}`);
     } finally {
       setLoading(false);
     }
